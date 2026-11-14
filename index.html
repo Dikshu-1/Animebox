@@ -1,0 +1,1481 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+  <title>AnimeBox — Stream & Manage Anime</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- HLS.js for .m3u8 streaming links -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0;
+      background-color: #0b0c10;
+      color: #f1f5f9;
+      font-family: system-ui, -apple-system, sans-serif;
+      overflow-x: hidden;
+    }
+    #search-input {
+      width: 100%;
+      height: 46px;
+      background-color: #161822 !important;
+      color: #ffffff !important;
+      -webkit-text-fill-color: #ffffff !important;
+      caret-color: #22d3ee !important;
+      font-size: 15px !important;
+      padding: 0 38px 0 40px !important;
+      border: 1px solid #2b3042;
+      border-radius: 14px;
+      outline: none;
+    }
+    #search-input::placeholder {
+      color: #94a3b8 !important;
+      -webkit-text-fill-color: #94a3b8 !important;
+      opacity: 1 !important;
+    }
+    body.lite-mode * {
+      animation: none !important;
+      transition: none !important;
+      backdrop-filter: none !important;
+      box-shadow: none !important;
+    }
+    #bottom-nav {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      z-index: 999999;
+      background: #0f1119;
+      border-top: 1px solid #252938;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    .bottom-nav-btn {
+      cursor: pointer;
+      touch-action: manipulation;
+      background: transparent;
+      border: none;
+    }
+    .anime-card-img { aspect-ratio: 2 / 3; object-fit: cover; }
+  </style>
+</head>
+<body class="bg-[#0b0c10] text-slate-100 min-h-screen pb-24">
+
+  <!-- TOP NAVBAR -->
+  <header class="sticky top-0 z-40 bg-[#0b0c10] border-b border-[#252938]">
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 h-16 flex items-center gap-2.5 sm:gap-4">
+      <button type="button" onclick="switchMainView('home')" class="flex items-center gap-2 shrink-0 text-left">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-600 to-cyan-500 flex items-center justify-center font-extrabold text-white text-base">
+          A
+        </div>
+        <div class="hidden sm:block leading-tight">
+          <span class="font-extrabold text-base tracking-tight text-white">Anime<span class="text-cyan-400">Box</span></span>
+          <span id="cloud-status-pill" class="block text-[10px] font-semibold text-emerald-400">● Firebase Live</span>
+        </div>
+      </button>
+
+      <div class="relative flex-1 min-w-0">
+        <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path>
+        </svg>
+        <input id="search-input" type="text" autocomplete="off" spellcheck="false" oninput="onSearchTyped(this.value)" placeholder="Search anime, genre, or audio..." />
+        <button id="search-clear-btn" type="button" onclick="clearSearchInput()" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-slate-700 text-slate-200 text-xs flex items-center justify-center">
+          ✕
+        </button>
+        <div id="search-suggestions" class="hidden absolute left-0 right-0 top-[52px] z-[9999] bg-[#141722] border border-[#2d3348] rounded-2xl shadow-2xl overflow-hidden max-h-[72vh] overflow-y-auto"></div>
+      </div>
+
+      <button id="lite-mode-btn" type="button" onclick="toggleLiteMode()" class="shrink-0 px-2.5 py-2 rounded-xl bg-[#13151d] border border-[#252938] text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+        <span id="lite-dot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+        <span>Lite</span>
+      </button>
+    </div>
+  </header>
+
+  <div id="toast-box" class="fixed top-20 right-4 z-[999999] hidden max-w-xs bg-[#181c2a] border border-violet-500 text-white text-xs font-semibold px-4 py-3 rounded-xl shadow-2xl"></div>
+
+  <main class="max-w-7xl mx-auto px-3 sm:px-6 pt-4">
+
+    <!-- 1. HOME VIEW -->
+    <section id="home-view" class="space-y-6">
+      <div id="hero-banner" class="hidden relative rounded-2xl overflow-hidden border border-[#252938] bg-[#13151d]">
+        <div class="grid md:grid-cols-12 items-center">
+          <div class="md:col-span-7 p-5 sm:p-8 space-y-3 z-10">
+            <div class="flex flex-wrap items-center gap-2 text-xs font-semibold">
+              <span class="px-2.5 py-1 rounded-full bg-violet-600/25 text-violet-300 border border-violet-500/30">Featured Spotlight</span>
+              <span id="hero-audio-badge" class="px-2.5 py-1 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">Sub</span>
+              <span id="hero-meta" class="text-slate-400">Season 1 • 0 Episodes</span>
+            </div>
+            <h1 id="hero-title" class="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">Anime Title</h1>
+            <p id="hero-desc" class="text-xs sm:text-sm text-slate-300 line-clamp-2 max-w-xl">Description</p>
+            <div class="flex flex-wrap items-center gap-2.5 pt-1">
+              <button id="hero-watch-btn" type="button" class="px-5 py-2.5 rounded-xl bg-violet-600 text-white font-bold text-xs sm:text-sm">▶ Watch Now</button>
+              <button id="hero-list-btn" type="button" class="px-4 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-slate-200 font-semibold text-xs sm:text-sm">+ My List</button>
+            </div>
+          </div>
+          <div class="md:col-span-5 h-52 sm:h-64 md:h-72 relative overflow-hidden">
+            <img id="hero-poster" src="" alt="Banner" class="w-full h-full object-cover" />
+          </div>
+        </div>
+      </div>
+
+      <div id="empty-catalog-banner" class="rounded-2xl border border-[#252938] bg-[#13151d] p-6 sm:p-10 text-center space-y-4">
+        <div class="w-14 h-14 mx-auto rounded-2xl bg-violet-600/20 border border-violet-500/30 flex items-center justify-center text-2xl">🎬</div>
+        <div class="space-y-1.5 max-w-md mx-auto">
+          <h2 class="text-xl sm:text-2xl font-extrabold text-white">Welcome to AnimeBox</h2>
+          <p class="text-xs sm:text-sm text-slate-400">
+            Supports YouTube, Google Drive, .m3u8, .mp4, .mkv, Dailymotion, Vimeo & all embed links! Open Admin Studio to upload.
+          </p>
+        </div>
+        <div class="flex flex-wrap justify-center gap-3">
+          <button type="button" onclick="switchMainView('admin')" class="px-5 py-2.5 rounded-xl bg-violet-600 text-white font-bold text-xs sm:text-sm">
+            Open Admin Studio (PIN: 1234)
+          </button>
+          <button type="button" onclick="syncFromFirebase(true)" class="px-4 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-slate-300 font-semibold text-xs sm:text-sm">
+            ↻ Refresh Cloud
+          </button>
+        </div>
+      </div>
+
+      <div id="continue-watching-section" class="hidden space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-base sm:text-lg font-extrabold text-white">Continue Watching</h2>
+          <button type="button" onclick="clearContinueWatching()" class="text-xs text-slate-400">Clear All</button>
+        </div>
+        <div id="continue-watching-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-between gap-2.5">
+        <div id="audio-filter-bar" class="flex items-center gap-1.5 overflow-x-auto pb-1">
+          <button type="button" data-audio="ALL" onclick="setAudioFilter('ALL')" class="audio-pill px-3 py-1.5 rounded-xl text-xs font-bold bg-violet-600 text-white">All</button>
+          <button type="button" data-audio="Sub" onclick="setAudioFilter('Sub')" class="audio-pill px-3 py-1.5 rounded-xl text-xs font-semibold bg-[#13151d] border border-[#252938] text-slate-300">Sub</button>
+          <button type="button" data-audio="Hindi Dub" onclick="setAudioFilter('Hindi Dub')" class="audio-pill px-3 py-1.5 rounded-xl text-xs font-semibold bg-[#13151d] border border-[#252938] text-slate-300">Hindi Dub</button>
+          <button type="button" data-audio="English Dub" onclick="setAudioFilter('English Dub')" class="audio-pill px-3 py-1.5 rounded-xl text-xs font-semibold bg-[#13151d] border border-[#252938] text-slate-300">English Dub</button>
+          <button type="button" data-audio="Multi-Audio" onclick="setAudioFilter('Multi-Audio')" class="audio-pill px-3 py-1.5 rounded-xl text-xs font-semibold bg-[#13151d] border border-[#252938] text-slate-300">Multi-Audio</button>
+        </div>
+        <button type="button" onclick="playRandomAnime()" class="px-3.5 py-1.5 rounded-xl bg-[#13151d] border border-[#252938] text-xs font-semibold text-cyan-400">
+          🎲 Surprise Me
+        </button>
+      </div>
+
+      <div class="space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-base sm:text-lg font-extrabold text-white">All Anime Series</h2>
+          <span id="catalog-count-label" class="text-xs text-slate-400">0 Series</span>
+        </div>
+        <div id="anime-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4"></div>
+      </div>
+    </section>
+
+    <!-- 2. WATCH / UNIVERSAL PLAYER VIEW -->
+    <section id="watch-view" class="hidden space-y-5">
+      <div class="flex items-center justify-between gap-2">
+        <button type="button" onclick="switchMainView('home')" class="px-3.5 py-2 rounded-xl bg-[#13151d] border border-[#252938] text-xs font-bold text-slate-200">
+          ← Back to Browse
+        </button>
+        <div class="flex items-center gap-2">
+          <span id="player-source-badge" class="px-2.5 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-[11px] font-bold text-emerald-300">Universal Player</span>
+          <button id="watch-mylist-btn" type="button" class="px-3.5 py-2 rounded-xl bg-[#13151d] border border-[#252938] text-xs font-semibold text-slate-200">+ My List</button>
+          <button id="watch-download-season-btn" type="button" class="px-3.5 py-2 rounded-xl bg-cyan-600/20 border border-cyan-500/40 text-xs font-bold text-cyan-300">⬇ Download Season</button>
+        </div>
+      </div>
+
+      <!-- UNIVERSAL VIDEO / IFRAME CONTAINER -->
+      <div class="bg-black rounded-2xl overflow-hidden border border-[#252938] relative">
+        <video id="anime-video-player" class="w-full aspect-video bg-black" controls playsinline preload="metadata"></video>
+        <iframe id="anime-embed-player" class="hidden w-full aspect-video bg-black border-0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe>
+
+        <div id="autonext-overlay" class="hidden absolute inset-0 bg-black/85 flex flex-col items-center justify-center gap-3 p-4 text-center z-20">
+          <p class="text-xs uppercase tracking-wider text-cyan-400 font-bold">Up Next in <span id="autonext-sec">3</span>s</p>
+          <h4 id="autonext-title" class="text-base sm:text-lg font-extrabold text-white">Next Episode</h4>
+          <div class="flex gap-2.5">
+            <button type="button" onclick="playNextEpisode()" class="px-4 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold">Play Now</button>
+            <button type="button" onclick="cancelAutoNext()" class="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-[#13151d] border border-[#252938] rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-2.5">
+        <div class="space-y-0.5">
+          <h2 id="player-anime-title" class="text-base sm:text-lg font-extrabold text-white">Anime Title</h2>
+          <p id="player-ep-subtitle" class="text-xs text-cyan-400 font-semibold">Season 1 • Episode 1</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          <button type="button" onclick="seekPlayer(-10)" class="px-2.5 py-1.5 rounded-lg bg-[#181b25] border border-[#252938] text-xs font-semibold text-slate-200">-10s</button>
+          <button type="button" onclick="seekPlayer(85)" class="px-2.5 py-1.5 rounded-lg bg-violet-600/25 border border-violet-500/40 text-xs font-bold text-violet-300">+85s Skip Intro</button>
+          <button type="button" onclick="seekPlayer(10)" class="px-2.5 py-1.5 rounded-lg bg-[#181b25] border border-[#252938] text-xs font-semibold text-slate-200">+10s</button>
+          <select id="playback-speed-select" onchange="changePlaybackSpeed(this.value)" class="px-2 py-1.5 rounded-lg bg-[#181b25] border border-[#252938] text-xs font-semibold text-slate-200">
+            <option value="0.75">0.75x</option>
+            <option value="1" selected>1.0x</option>
+            <option value="1.25">1.25x</option>
+            <option value="1.5">1.5x</option>
+            <option value="2">2.0x</option>
+          </select>
+          <button type="button" onclick="playPreviousEpisode()" class="px-3 py-1.5 rounded-lg bg-[#181b25] border border-[#252938] text-xs font-bold text-slate-200">⏮ Prev</button>
+          <button type="button" onclick="playNextEpisode()" class="px-3 py-1.5 rounded-lg bg-violet-600 text-xs font-bold text-white">Next ⏭</button>
+          <button id="player-download-ep-btn" type="button" class="px-3 py-1.5 rounded-lg bg-cyan-600 text-xs font-bold text-white">⬇ Download / Open</button>
+        </div>
+      </div>
+
+      <div class="bg-[#13151d] border border-[#252938] rounded-2xl p-4 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Select Season:</span>
+            <select id="watch-season-select" onchange="onWatchSeasonChange(this.value)" class="px-3 py-2 rounded-xl bg-[#181b25] border border-[#252938] text-xs sm:text-sm font-bold text-white"></select>
+          </div>
+          <span id="watch-season-ep-count" class="text-xs text-slate-400">0 Episodes</span>
+        </div>
+        <div id="watch-episodes-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5"></div>
+      </div>
+    </section>
+
+    <!-- 3. MY LIST VIEW -->
+    <section id="mylist-view" class="hidden space-y-4">
+      <div>
+        <h2 class="text-xl font-extrabold text-white">My Watchlist</h2>
+        <p class="text-xs text-slate-400">Saved anime series synced to your account</p>
+      </div>
+      <div id="mylist-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4"></div>
+    </section>
+
+    <!-- 4. DOWNLOADS VIEW -->
+    <section id="downloads-view" class="hidden space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-extrabold text-white">Offline Downloads Manager</h2>
+          <p class="text-xs text-slate-400">Downloaded episodes & queued seasons</p>
+        </div>
+        <button type="button" onclick="clearAllDownloads()" class="px-3 py-1.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs font-bold text-rose-300">Clear History</button>
+      </div>
+      <div id="downloads-list" class="space-y-2.5"></div>
+    </section>
+
+    <!-- 5. ACCOUNT VIEW -->
+    <section id="account-view" class="hidden max-w-md mx-auto space-y-4 pt-2">
+      <div id="account-guest-card" class="bg-[#13151d] border border-[#252938] rounded-2xl p-5 sm:p-6 space-y-4">
+        <div class="text-center space-y-1">
+          <h2 class="text-xl font-extrabold text-white">AnimeBox Account</h2>
+          <p class="text-xs text-slate-400">Create an email account to save My List & Continue Watching progress</p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 p-1 rounded-xl bg-[#181b25] border border-[#252938]">
+          <button id="auth-tab-signup" type="button" onclick="switchAuthTab('signup')" class="py-2 rounded-lg text-xs font-bold bg-violet-600 text-white">Create Account</button>
+          <button id="auth-tab-login" type="button" onclick="switchAuthTab('login')" class="py-2 rounded-lg text-xs font-semibold text-slate-400">Log In</button>
+        </div>
+
+        <form id="signup-form" onsubmit="handleEmailSignUp(event)" class="space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Display Name</label>
+            <input id="signup-name" type="text" required placeholder="e.g. Luffy" class="w-full px-3.5 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-sm text-white outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Email Address</label>
+            <input id="signup-email" type="email" required placeholder="you@example.com" class="w-full px-3.5 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-sm text-white outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Password</label>
+            <input id="signup-password" type="password" required minlength="4" placeholder="Create password" class="w-full px-3.5 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-sm text-white outline-none" />
+          </div>
+          <button type="submit" class="w-full py-2.5 rounded-xl bg-violet-600 text-white font-bold text-sm">Create Account</button>
+        </form>
+
+        <form id="login-form" onsubmit="handleEmailLogin(event)" class="hidden space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Email Address</label>
+            <input id="login-email" type="email" required placeholder="you@example.com" class="w-full px-3.5 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-sm text-white outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Password</label>
+            <input id="login-password" type="password" required placeholder="Enter password" class="w-full px-3.5 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-sm text-white outline-none" />
+          </div>
+          <button type="submit" class="w-full py-2.5 rounded-xl bg-cyan-600 text-white font-bold text-sm">Log In</button>
+        </form>
+      </div>
+
+      <div id="account-profile-card" class="hidden bg-[#13151d] border border-[#252938] rounded-2xl p-6 space-y-5 text-center">
+        <div id="profile-avatar" class="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-violet-600 to-cyan-500 flex items-center justify-center text-2xl font-extrabold text-white">U</div>
+        <div>
+          <h3 id="profile-name" class="text-lg font-extrabold text-white">User Name</h3>
+          <p id="profile-email" class="text-xs text-slate-400">user@example.com</p>
+        </div>
+        <div class="grid grid-cols-2 gap-3 text-center">
+          <div class="p-3 rounded-xl bg-[#181b25] border border-[#252938]">
+            <span id="profile-mylist-count" class="block text-lg font-extrabold text-violet-400">0</span>
+            <span class="text-[11px] text-slate-400">My List</span>
+          </div>
+          <div class="p-3 rounded-xl bg-[#181b25] border border-[#252938]">
+            <span id="profile-history-count" class="block text-lg font-extrabold text-cyan-400">0</span>
+            <span class="text-[11px] text-slate-400">Continue Watching</span>
+          </div>
+        </div>
+        <button type="button" onclick="logoutUserAccount()" class="w-full py-2.5 rounded-xl bg-rose-600/20 border border-rose-500/40 text-rose-300 font-bold text-xs">
+          Sign Out
+        </button>
+      </div>
+    </section>
+
+    <!-- 6. ADMIN STUDIO VIEW -->
+    <section id="admin-view" class="hidden space-y-5">
+      <div id="admin-lock-screen" class="max-w-md mx-auto bg-[#13151d] border border-[#252938] rounded-2xl p-6 space-y-4 text-center mt-4">
+        <div class="w-12 h-12 mx-auto rounded-2xl bg-violet-600/20 border border-violet-500/40 flex items-center justify-center text-xl">🔒</div>
+        <div>
+          <h2 class="text-lg font-extrabold text-white">Admin Studio Locked</h2>
+          <p class="text-xs text-slate-400">Enter Admin PIN (Default: <span class="text-cyan-400 font-bold">1234</span>)</p>
+        </div>
+        <form onsubmit="handleInlineAdminUnlock(event)" class="space-y-3">
+          <div class="relative">
+            <input id="admin-pin-input" type="password" inputmode="numeric" placeholder="Enter PIN (1234)" class="w-full px-4 py-3 rounded-xl bg-[#181b25] border border-[#252938] text-center text-base font-bold tracking-widest text-white outline-none" />
+            <button type="button" onclick="toggleAdminPinVisibility()" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">Show</button>
+          </div>
+          <p id="admin-pin-error" class="hidden text-xs font-semibold text-rose-400">Incorrect PIN! Try again.</p>
+          <div class="flex gap-2">
+            <button type="button" onclick="document.getElementById('admin-pin-input').value='1234'" class="px-3 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-xs font-semibold text-slate-300">Fill 1234</button>
+            <button type="submit" class="flex-1 py-2.5 rounded-xl bg-violet-600 text-white font-bold text-sm">Unlock Admin Panel</button>
+          </div>
+        </form>
+      </div>
+
+      <div id="admin-studio-content" class="hidden space-y-5">
+        <div class="flex flex-wrap items-center justify-between gap-2 bg-[#13151d] border border-[#252938] rounded-2xl p-4">
+          <div>
+            <h2 class="text-lg sm:text-xl font-extrabold text-white">Admin Studio</h2>
+            <p class="text-xs text-emerald-400 font-semibold">● Connected to animebox-82d9a-default-rtdb.firebaseio.com</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" onclick="syncFromFirebase(true)" class="px-3 py-2 rounded-xl bg-cyan-600/20 border border-cyan-500/40 text-xs font-bold text-cyan-300">↻ Sync Cloud</button>
+            <button type="button" onclick="lockAdminPanel()" class="px-3 py-2 rounded-xl bg-rose-500/20 border border-rose-500/40 text-xs font-bold text-rose-300">🔒 Lock Admin</button>
+          </div>
+        </div>
+
+        <div class="grid lg:grid-cols-2 gap-5">
+          <div class="bg-[#13151d] border border-[#252938] rounded-2xl p-5 space-y-3.5">
+            <h3 class="text-base font-extrabold text-white">1. Create New Anime Series</h3>
+            <form onsubmit="handleCreateSeries(event)" class="space-y-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Anime Title *</label>
+                <input id="new-series-title" type="text" required placeholder="e.g. One Piece, Solo Leveling" class="w-full px-3.5 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-sm text-white outline-none" />
+              </div>
+              <div class="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-300 mb-1">Audio Language</label>
+                  <select id="new-series-audio" class="w-full px-3 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-xs font-bold text-white">
+                    <option value="Sub">Sub (Japanese)</option>
+                    <option value="Hindi Dub">Hindi Dub</option>
+                    <option value="English Dub">English Dub</option>
+                    <option value="Multi-Audio">Multi-Audio</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-300 mb-1">Rating (1-10)</label>
+                  <input id="new-series-rating" type="number" step="0.1" min="1" max="10" value="9.0" class="w-full px-3 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-sm text-white outline-none" />
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Genres (comma separated)</label>
+                <input id="new-series-genres" type="text" placeholder="Action, Adventure, Fantasy" class="w-full px-3.5 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-sm text-white outline-none" />
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Poster Image URL</label>
+                <input id="new-series-poster" type="url" placeholder="https://example.com/poster.jpg" class="w-full px-3.5 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-sm text-white outline-none" />
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Description</label>
+                <textarea id="new-series-desc" rows="2" placeholder="Short anime synopsis..." class="w-full px-3.5 py-2 rounded-xl bg-[#181b25] border border-[#252938] text-sm text-white outline-none"></textarea>
+              </div>
+              <button type="submit" class="w-full py-2.5 rounded-xl bg-violet-600 text-white font-bold text-sm">+ Publish Anime Series</button>
+            </form>
+          </div>
+
+          <div class="bg-[#13151d] border border-[#252938] rounded-2xl p-5 space-y-3.5">
+            <div class="flex items-center justify-between">
+              <h3 class="text-base font-extrabold text-white">2. Sequential Episode Uploader</h3>
+              <span id="next-ep-badge" class="px-2.5 py-1 rounded-lg bg-cyan-500/20 text-cyan-300 text-xs font-bold">Next: Ep 1</span>
+            </div>
+            <form onsubmit="handleUploadEpisodes(event)" class="space-y-3">
+              <div class="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-300 mb-1">Select Anime *</label>
+                  <select id="upload-anime-select" onchange="onUploadAnimeChange()" class="w-full px-3 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-xs font-bold text-white"></select>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-300 mb-1">Select Season *</label>
+                  <select id="upload-season-select" onchange="updateNextEpisodeBadge()" class="w-full px-3 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-xs font-bold text-white"></select>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-3 gap-2.5">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-300 mb-1">Episode #</label>
+                  <input id="upload-ep-number" type="number" min="1" value="1" class="w-full px-3 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-sm font-bold text-cyan-400 outline-none" />
+                </div>
+                <div class="col-span-2">
+                  <label class="block text-xs font-semibold text-slate-300 mb-1">Episode Title (Optional)</label>
+                  <input id="upload-ep-title" type="text" placeholder="Auto-named if empty" class="w-full px-3 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-sm text-white outline-none" />
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Any Video Link (YouTube, Google Drive, .mp4, .m3u8, .mkv, Dailymotion, Embed)</label>
+                <input id="upload-ep-url" type="text" placeholder="Paste any video link or iframe URL here..." class="w-full px-3.5 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-sm text-white outline-none" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">OR Select Local Video Files</label>
+                <input id="upload-ep-files" type="file" accept="video/*" multiple class="w-full text-xs text-slate-300 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-violet-600 file:text-white" />
+              </div>
+
+              <button type="submit" class="w-full py-2.5 rounded-xl bg-cyan-600 text-white font-bold text-sm">⬆ Upload Episode(s) in Sequence</button>
+            </form>
+          </div>
+
+          <div class="bg-[#13151d] border border-[#252938] rounded-2xl p-5 space-y-3.5">
+            <h3 class="text-base font-extrabold text-white">3. Add Season to Existing Anime</h3>
+            <form onsubmit="handleAddSeason(event)" class="space-y-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Select Anime Series</label>
+                <select id="season-anime-select" class="w-full px-3 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-xs font-bold text-white"></select>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Season Name</label>
+                <input id="new-season-name" type="text" placeholder="e.g. Season 2, Movie 1, Wano Arc" class="w-full px-3.5 py-2.5 rounded-xl bg-[#181b25] border border-[#252938] text-sm text-white outline-none" />
+              </div>
+              <button type="submit" class="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm">+ Add Season</button>
+            </form>
+          </div>
+
+          <div class="bg-[#13151d] border border-[#252938] rounded-2xl p-5 space-y-4">
+            <h3 class="text-base font-extrabold text-white">4. Security & Catalog Backup</h3>
+            <form onsubmit="handleChangeAdminPassword(event)" class="space-y-2.5">
+              <div class="grid grid-cols-2 gap-2">
+                <input id="old-admin-pin" type="password" required placeholder="Current PIN" class="px-3 py-2 rounded-xl bg-[#181b25] border border-[#252938] text-xs text-white outline-none" />
+                <input id="new-admin-pin" type="password" required minlength="4" placeholder="New PIN" class="px-3 py-2 rounded-xl bg-[#181b25] border border-[#252938] text-xs text-white outline-none" />
+              </div>
+              <button type="submit" class="w-full py-2 rounded-xl bg-slate-800 border border-[#252938] text-xs font-bold text-white">Update Admin Password</button>
+            </form>
+
+            <div class="pt-2 border-t border-[#252938] flex flex-wrap gap-2">
+              <button type="button" onclick="exportCatalogBackup()" class="flex-1 py-2 rounded-xl bg-emerald-600/20 border border-emerald-500/40 text-xs font-bold text-emerald-300">⬇ Export JSON</button>
+              <label class="flex-1 py-2 rounded-xl bg-amber-600/20 border border-amber-500/40 text-xs font-bold text-amber-300 text-center cursor-pointer">
+                ⬆ Import JSON
+                <input type="file" accept=".json" onchange="importCatalogBackup(event)" class="hidden" />
+              </label>
+              <button type="button" onclick="clearEntireCatalog()" class="w-full py-2 rounded-xl bg-rose-600/20 border border-rose-500/40 text-xs font-bold text-rose-300">🗑 Delete All Catalog Data</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-[#13151d] border border-[#252938] rounded-2xl p-5 space-y-3">
+          <h3 class="text-base font-extrabold text-white">5. Manage Uploaded Anime & Episodes</h3>
+          <div id="admin-catalog-list" class="space-y-3"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- PERSISTENT BOTTOM NAVIGATION BAR -->
+  <nav id="bottom-nav" aria-label="Primary Navigation">
+    <div class="max-w-2xl mx-auto grid grid-cols-5 h-16">
+      <button id="bottom-nav-home" type="button" onclick="switchMainView('home')" class="bottom-nav-btn flex flex-col items-center justify-center gap-1 text-violet-400">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1v-10.5Z"/></svg>
+        <span class="text-[11px] font-bold">Home</span>
+      </button>
+
+      <button id="bottom-nav-mylist" type="button" onclick="switchMainView('mylist')" class="bottom-nav-btn flex flex-col items-center justify-center gap-1 text-slate-400">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+        <span class="text-[11px] font-semibold">My List</span>
+      </button>
+
+      <button id="bottom-nav-downloads" type="button" onclick="switchMainView('downloads')" class="bottom-nav-btn relative flex flex-col items-center justify-center gap-1 text-slate-400">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        <span class="text-[11px] font-semibold">Downloads</span>
+        <span id="downloads-badge" class="hidden absolute top-2 right-5 px-1.5 py-0.2 rounded-full bg-cyan-500 text-black text-[9px] font-extrabold">0</span>
+      </button>
+
+      <button id="bottom-nav-account" type="button" onclick="switchMainView('account')" class="bottom-nav-btn flex flex-col items-center justify-center gap-1 text-slate-400">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span id="bottom-nav-account-label" class="text-[11px] font-semibold">Account</span>
+      </button>
+
+      <button id="bottom-nav-admin" type="button" onclick="switchMainView('admin')" class="bottom-nav-btn flex flex-col items-center justify-center gap-1 text-slate-400">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span class="text-[11px] font-semibold">Admin</span>
+      </button>
+    </div>
+  </nav>
+
+  <script>
+    const FIREBASE_DB_URL = "https://animebox-82d9a-default-rtdb.firebaseio.com";
+    const STORAGE_KEYS = {
+      CATALOG: "animebox_catalog_v2",
+      ADMIN_PIN: "animebox_admin_pin_v2",
+      USERS: "animebox_users_v2",
+      CURRENT_USER: "animebox_current_user_v2",
+      DOWNLOADS: "animebox_downloads_v2",
+      WATCHED_EPS: "animebox_watched_eps_v2",
+      LITE_MODE: "animebox_lite_mode_v2"
+    };
+
+    const FALLBACK_POSTER = "data:image/svg+xml;utf8," + encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600" viewBox="0 0 400 600">' +
+      '<rect width="400" height="600" fill="#1e1b4b"/>' +
+      '<text x="200" y="295" fill="#a78bfa" font-family="sans-serif" font-size="34" font-weight="bold" text-anchor="middle">AnimeBox</text>' +
+      '</svg>'
+    );
+
+    let animeCatalog = [];
+    let isAdminUnlocked = false;
+    let activeAudioFilter = "ALL";
+    let currentView = "home";
+    let playerState = { animeId: null, seasonIndex: 0, episodeIndex: 0 };
+    let autoNextTimer = null;
+    let activeHlsInstance = null;
+
+    // ==================== UNIVERSAL VIDEO LINK DETECTOR ====================
+    function parseUniversalVideoSource(rawInput) {
+      if (!rawInput) return { mode: "native", url: "", label: "Direct" };
+      var input = String(rawInput).trim();
+
+      // If user pasted full <iframe src="..."> tag, extract src URL
+      var iframeMatch = input.match(/<iframe[^>]+src=["']([^"']+)["']/i);
+      if (iframeMatch) {
+        return { mode: "embed", url: iframeMatch[1], label: "Embed" };
+      }
+
+      // 1. YouTube (watch, youtu.be, shorts, live, embed)
+      var ytMatch = input.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/|live\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+      if (ytMatch) {
+        return {
+          mode: "embed",
+          url: "https://www.youtube.com/embed/" + ytMatch[1] + "?autoplay=1&rel=0&modestbranding=1",
+          label: "YouTube"
+        };
+      }
+
+      // 2. Google Drive file link -> preview embed
+      var gdriveMatch = input.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/);
+      if (gdriveMatch) {
+        return {
+          mode: "embed",
+          url: "https://drive.google.com/file/d/" + gdriveMatch[1] + "/preview",
+          label: "Google Drive"
+        };
+      }
+
+      // 3. Dailymotion
+      var dmMatch = input.match(/(?:dailymotion\.com\/video\/|dai\.ly\/)([a-zA-Z0-9]+)/);
+      if (dmMatch) {
+        return {
+          mode: "embed",
+          url: "https://www.dailymotion.com/embed/video/" + dmMatch[1] + "?autoplay=1",
+          label: "Dailymotion"
+        };
+      }
+
+      // 4. Vimeo
+      var vimeoMatch = input.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+      if (vimeoMatch) {
+        return {
+          mode: "embed",
+          url: "https://player.vimeo.com/video/" + vimeoMatch[1] + "?autoplay=1",
+          label: "Vimeo"
+        };
+      }
+
+      // 5. HLS (.m3u8) adaptive stream
+      if (/\.m3u8(\?|$)/i.test(input)) {
+        return { mode: "hls", url: input, label: "HLS Stream" };
+      }
+
+      // 6. Direct HTML5 video files or local blob: URLs
+      if (/^blob:/i.test(input) || /\.(mp4|webm|ogg|mkv|mov|avi|m4v)(\?|$)/i.test(input)) {
+        return { mode: "native", url: input, label: "Direct Video" };
+      }
+
+      // 7. Any other web player / hosting link (Ok.ru, Streamtape, Dood, Mega, etc.) -> Embed iframe
+      return { mode: "embed", url: input, label: "Web Embed" };
+    }
+
+    function showToast(msg) {
+      const box = document.getElementById("toast-box");
+      if (!box) return;
+      box.textContent = msg;
+      box.classList.remove("hidden");
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(function() { box.classList.add("hidden"); }, 3000);
+    }
+
+    function destroyActivePlayers() {
+      var video = document.getElementById("anime-video-player");
+      var embed = document.getElementById("anime-embed-player");
+      if (activeHlsInstance) {
+        try { activeHlsInstance.destroy(); } catch (e) {}
+        activeHlsInstance = null;
+      }
+      if (video) {
+        try { video.pause(); } catch (e) {}
+        video.removeAttribute("src");
+        video.load();
+      }
+      if (embed) {
+        embed.src = "";
+      }
+    }
+
+    function switchMainView(targetView) {
+      var suggestions = document.getElementById("search-suggestions");
+      if (suggestions) suggestions.classList.add("hidden");
+
+      if (targetView !== "watch") {
+        destroyActivePlayers();
+      }
+
+      var views = ["home", "watch", "mylist", "downloads", "account", "admin"];
+      for (var i = 0; i < views.length; i++) {
+        var v = views[i];
+        var el = document.getElementById(v + "-view");
+        if (el) {
+          if (v === targetView) el.classList.remove("hidden");
+          else el.classList.add("hidden");
+        }
+      }
+
+      currentView = targetView;
+      var navMap = ["home", "mylist", "downloads", "account", "admin"];
+      for (var j = 0; j < navMap.length; j++) {
+        var btn = document.getElementById("bottom-nav-" + navMap[j]);
+        if (btn) {
+          if (navMap[j] === targetView) {
+            btn.classList.add("text-violet-400");
+            btn.classList.remove("text-slate-400");
+          } else {
+            btn.classList.remove("text-violet-400");
+            btn.classList.add("text-slate-400");
+          }
+        }
+      }
+
+      if (targetView === "home") renderHomeView();
+      if (targetView === "mylist") renderMyListView();
+      if (targetView === "downloads") renderDownloadsView();
+      if (targetView === "account") renderAccountView();
+      if (targetView === "admin") updateAdminViewState();
+      window.scrollTo(0, 0);
+    }
+
+    async function syncFromFirebase(notify) {
+      var pill = document.getElementById("cloud-status-pill");
+      try {
+        var res = await fetch(FIREBASE_DB_URL + "/catalog.json");
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        var data = await res.json();
+        if (Array.isArray(data)) animeCatalog = data.filter(Boolean);
+        else if (data && typeof data === "object") animeCatalog = Object.values(data).filter(Boolean);
+        else animeCatalog = [];
+
+        localStorage.setItem(STORAGE_KEYS.CATALOG, JSON.stringify(animeCatalog));
+        if (pill) {
+          pill.textContent = "● Firebase Live";
+          pill.className = "block text-[10px] font-semibold text-emerald-400";
+        }
+        renderAllViews();
+        if (notify) showToast("Synced with Firebase Cloud!");
+      } catch (err) {
+        if (pill) {
+          pill.textContent = "● Offline Cache";
+          pill.className = "block text-[10px] font-semibold text-amber-400";
+        }
+        if (notify) showToast("Offline mode active");
+      }
+    }
+
+    async function pushCatalogToFirebase() {
+      localStorage.setItem(STORAGE_KEYS.CATALOG, JSON.stringify(animeCatalog));
+      try {
+        await fetch(FIREBASE_DB_URL + "/catalog.json", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(animeCatalog)
+        });
+      } catch (err) {}
+    }
+
+    function onSearchTyped(val) {
+      var q = (val || "").trim();
+      var clearBtn = document.getElementById("search-clear-btn");
+      var box = document.getElementById("search-suggestions");
+      if (clearBtn) clearBtn.classList.toggle("hidden", q.length === 0);
+      if (!box) return;
+      if (!q) {
+        box.classList.add("hidden");
+        return;
+      }
+      var lower = q.toLowerCase();
+      var matches = animeCatalog.filter(function(a) {
+        return (a.title || "").toLowerCase().indexOf(lower) !== -1 ||
+               (a.genres || "").toLowerCase().indexOf(lower) !== -1 ||
+               (a.audio || "").toLowerCase().indexOf(lower) !== -1;
+      });
+      if (matches.length === 0) {
+        box.innerHTML = '<div class="p-4 text-xs text-slate-400 text-center">No anime found for "' + escapeHtml(q) + '"</div>';
+        box.classList.remove("hidden");
+        return;
+      }
+      box.innerHTML = matches.slice(0, 8).map(function(anime) {
+        var seasons = anime.seasons || [];
+        var totalEps = seasons.reduce(function(s, sec) { return s + ((sec.episodes || []).length); }, 0);
+        return '<button type="button" onclick="openAnimePlayer(\'' + anime.id + '\', 0, 0)" class="w-full flex items-center gap-3 p-3 hover:bg-[#1e2233] border-b border-[#252938] text-left">' +
+          '<img src="' + (anime.poster || FALLBACK_POSTER) + '" class="w-11 h-14 rounded-lg object-cover shrink-0" />' +
+          '<div class="min-w-0 flex-1">' +
+          '<p class="text-sm font-bold text-white truncate">' + escapeHtml(anime.title) + '</p>' +
+          '<p class="text-[11px] text-slate-400">' + seasons.length + ' Season(s) • ' + totalEps + ' Ep</p>' +
+          '</div>' +
+          '<span class="text-xs font-bold text-cyan-400">Watch →</span>' +
+          '</button>';
+      }).join("");
+      box.classList.remove("hidden");
+    }
+
+    function clearSearchInput() {
+      var inp = document.getElementById("search-input");
+      if (inp) inp.value = "";
+      onSearchTyped("");
+    }
+
+    function setAudioFilter(audio) {
+      activeAudioFilter = audio;
+      document.querySelectorAll(".audio-pill").forEach(function(btn) {
+        var active = btn.getAttribute("data-audio") === audio;
+        btn.className = active
+          ? "audio-pill px-3 py-1.5 rounded-xl text-xs font-bold bg-violet-600 text-white"
+          : "audio-pill px-3 py-1.5 rounded-xl text-xs font-semibold bg-[#13151d] border border-[#252938] text-slate-300";
+      });
+      renderHomeView();
+    }
+
+    function renderHomeView() {
+      var hero = document.getElementById("hero-banner");
+      var emptyBanner = document.getElementById("empty-catalog-banner");
+      var grid = document.getElementById("anime-grid");
+      var countLabel = document.getElementById("catalog-count-label");
+
+      if (animeCatalog.length === 0) {
+        if (hero) hero.classList.add("hidden");
+        if (emptyBanner) emptyBanner.classList.remove("hidden");
+        if (grid) grid.innerHTML = "";
+        if (countLabel) countLabel.textContent = "0 Series";
+        renderContinueWatching();
+        return;
+      }
+
+      if (emptyBanner) emptyBanner.classList.add("hidden");
+      if (hero) {
+        hero.classList.remove("hidden");
+        var featured = animeCatalog[0];
+        var seasons = featured.seasons || [];
+        var totalEps = seasons.reduce(function(s, sec) { return s + ((sec.episodes || []).length); }, 0);
+        document.getElementById("hero-title").textContent = featured.title;
+        document.getElementById("hero-desc").textContent = featured.description || "Stream on AnimeBox.";
+        document.getElementById("hero-audio-badge").textContent = featured.audio || "Sub";
+        document.getElementById("hero-meta").textContent = seasons.length + " Season(s) • " + totalEps + " Episodes • ★ " + (featured.rating || "9.0");
+        var posterEl = document.getElementById("hero-poster");
+        posterEl.src = featured.poster || FALLBACK_POSTER;
+        document.getElementById("hero-watch-btn").onclick = function() { openAnimePlayer(featured.id, 0, 0); };
+        var heroListBtn = document.getElementById("hero-list-btn");
+        var inList = getUserMyList().indexOf(featured.id) !== -1;
+        heroListBtn.textContent = inList ? "✓ In My List" : "+ My List";
+        heroListBtn.onclick = function() { toggleWatchlist(featured.id); renderHomeView(); };
+      }
+
+      var filtered = activeAudioFilter === "ALL"
+        ? animeCatalog
+        : animeCatalog.filter(function(a) { return (a.audio || "Sub") === activeAudioFilter; });
+
+      if (countLabel) countLabel.textContent = filtered.length + " Series";
+      if (grid) grid.innerHTML = filtered.map(buildAnimeCardHtml).join("");
+      renderContinueWatching();
+    }
+
+    function buildAnimeCardHtml(anime) {
+      var seasons = anime.seasons || [];
+      var totalEps = seasons.reduce(function(sum, s) { return sum + ((s.episodes || []).length); }, 0);
+      var inList = getUserMyList().indexOf(anime.id) !== -1;
+      return '<div class="bg-[#13151d] border border-[#252938] rounded-2xl overflow-hidden flex flex-col">' +
+        '<div class="relative overflow-hidden cursor-pointer" onclick="openAnimePlayer(\'' + anime.id + '\', 0, 0)">' +
+        '<img src="' + (anime.poster || FALLBACK_POSTER) + '" alt="' + escapeHtml(anime.title) + '" class="w-full anime-card-img" loading="lazy" />' +
+        '<span class="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/80 text-cyan-300 text-[10px] font-bold">' + escapeHtml(anime.audio || "Sub") + '</span>' +
+        '<span class="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-violet-600 text-white text-[10px] font-bold">★ ' + (anime.rating || "9.0") + '</span>' +
+        '<div class="absolute bottom-0 inset-x-0 p-2 bg-black/80 flex items-center justify-between text-[11px] font-semibold text-slate-200">' +
+        '<span>' + seasons.length + 'S • ' + totalEps + ' Ep</span><span class="text-violet-300">▶ Play</span></div></div>' +
+        '<div class="p-3 flex-1 flex flex-col justify-between gap-2">' +
+        '<h3 onclick="openAnimePlayer(\'' + anime.id + '\', 0, 0)" class="text-xs sm:text-sm font-bold text-white truncate cursor-pointer">' + escapeHtml(anime.title) + '</h3>' +
+        '<button type="button" onclick="toggleWatchlist(\'' + anime.id + '\')" class="w-full py-1.5 rounded-lg text-[11px] font-bold border ' +
+        (inList ? 'bg-violet-600/20 border-violet-500 text-violet-300' : 'bg-[#181b25] border-[#252938] text-slate-300') + '">' +
+        (inList ? '✓ Saved in My List' : '+ My List') + '</button></div></div>';
+    }
+
+    function playRandomAnime() {
+      if (animeCatalog.length === 0) return showToast("Upload an anime first in Admin Studio!");
+      var rand = animeCatalog[Math.floor(Math.random() * animeCatalog.length)];
+      openAnimePlayer(rand.id, 0, 0);
+    }
+
+    function openAnimePlayer(animeId, seasonIndex, episodeIndex) {
+      var anime = animeCatalog.find(function(a) { return a.id === animeId; });
+      if (!anime) return showToast("Anime not found!");
+      var seasons = anime.seasons || [];
+      if (seasons.length === 0) return showToast("No seasons uploaded yet.");
+
+      var sIdx = Math.min(Math.max(0, seasonIndex || 0), seasons.length - 1);
+      var episodes = seasons[sIdx].episodes || [];
+      var eIdx = Math.min(Math.max(0, episodeIndex || 0), Math.max(0, episodes.length - 1));
+
+      playerState = { animeId: animeId, seasonIndex: sIdx, episodeIndex: eIdx };
+      switchMainView("watch");
+
+      document.getElementById("player-anime-title").textContent = anime.title;
+      document.getElementById("watch-season-select").innerHTML = seasons.map(function(s, idx) {
+        return '<option value="' + idx + '" ' + (idx === sIdx ? "selected" : "") + '>' + escapeHtml(s.name || ("Season " + (idx + 1))) + '</option>';
+      }).join("");
+
+      var listBtn = document.getElementById("watch-mylist-btn");
+      listBtn.textContent = getUserMyList().indexOf(anime.id) !== -1 ? "✓ In My List" : "+ My List";
+      listBtn.onclick = function() {
+        toggleWatchlist(anime.id);
+        listBtn.textContent = getUserMyList().indexOf(anime.id) !== -1 ? "✓ In My List" : "+ My List";
+      };
+      document.getElementById("watch-download-season-btn").onclick = function() { downloadEntireSeason(anime.id, sIdx); };
+
+      renderWatchEpisodesGrid();
+      loadCurrentEpisodeIntoVideo();
+    }
+
+    function onWatchSeasonChange(newIdx) {
+      openAnimePlayer(playerState.animeId, parseInt(newIdx, 10) || 0, 0);
+    }
+
+    function renderWatchEpisodesGrid() {
+      var anime = animeCatalog.find(function(a) { return a.id === playerState.animeId; });
+      if (!anime) return;
+      var season = (anime.seasons || [])[playerState.seasonIndex];
+      var episodes = (season && season.episodes) || [];
+      document.getElementById("watch-season-ep-count").textContent = episodes.length + " Episode(s)";
+      var grid = document.getElementById("watch-episodes-grid");
+
+      if (episodes.length === 0) {
+        grid.innerHTML = '<div class="col-span-full text-xs text-slate-400 py-4 text-center">No episodes in this season yet.</div>';
+        return;
+      }
+
+      grid.innerHTML = episodes.map(function(ep, idx) {
+        var isCurrent = idx === playerState.episodeIndex;
+        var parsed = parseUniversalVideoSource(ep.url);
+        return '<div class="rounded-xl border p-2.5 flex flex-col justify-between gap-2 ' + (isCurrent ? 'bg-violet-600/25 border-violet-500 text-white' : 'bg-[#181b25] border-[#252938] text-slate-300') + '">' +
+          '<button type="button" onclick="openAnimePlayer(\'' + anime.id + '\', ' + playerState.seasonIndex + ', ' + idx + ')" class="text-left">' +
+          '<div class="flex items-center justify-between text-xs font-extrabold"><span>Ep ' + (ep.number || (idx + 1)) + '</span>' +
+          '<span class="text-[9px] px-1.5 py-0.2 rounded bg-cyan-600/25 text-cyan-300">' + parsed.label + '</span></div>' +
+          '<p class="text-[11px] text-slate-400 truncate mt-0.5">' + escapeHtml(ep.title || ("Episode " + (idx + 1))) + '</p></button>' +
+          '<button type="button" onclick="triggerEpisodeDownload(\'' + anime.id + '\', ' + playerState.seasonIndex + ', ' + idx + ')" class="w-full py-1 rounded bg-slate-800 text-[10px] font-bold text-cyan-300">' +
+          (parsed.mode === "native" ? '⬇ Download' : '↗ Open Link') + '</button></div>';
+      }).join("");
+    }
+
+    function loadCurrentEpisodeIntoVideo() {
+      cancelAutoNext();
+      destroyActivePlayers();
+
+      var anime = animeCatalog.find(function(a) { return a.id === playerState.animeId; });
+      if (!anime) return;
+      var season = (anime.seasons || [])[playerState.seasonIndex];
+      var episodes = (season && season.episodes) || [];
+      var ep = episodes[playerState.episodeIndex];
+      var video = document.getElementById("anime-video-player");
+      var embedFrame = document.getElementById("anime-embed-player");
+      var dlBtn = document.getElementById("player-download-ep-btn");
+      var badge = document.getElementById("player-source-badge");
+
+      if (!ep) {
+        document.getElementById("player-ep-subtitle").textContent = (season ? season.name : "Season 1") + " • No Episodes";
+        video.classList.remove("hidden");
+        embedFrame.classList.add("hidden");
+        return;
+      }
+
+      document.getElementById("player-ep-subtitle").textContent =
+        (season.name || ("Season " + (playerState.seasonIndex + 1))) + " • Ep " + (ep.number || (playerState.episodeIndex + 1)) + ": " + (ep.title || "");
+
+      recordWatchHistory(anime.id, playerState.seasonIndex, playerState.episodeIndex);
+
+      var parsed = parseUniversalVideoSource(ep.url);
+      if (badge) badge.textContent = "Source: " + parsed.label;
+
+      if (parsed.mode === "embed") {
+        video.classList.add("hidden");
+        embedFrame.classList.remove("hidden");
+        embedFrame.src = parsed.url;
+        dlBtn.textContent = "↗ Open Direct";
+        dlBtn.onclick = function() { window.open(ep.url, "_blank"); };
+      } else if (parsed.mode === "hls") {
+        embedFrame.classList.add("hidden");
+        video.classList.remove("hidden");
+        if (window.Hls && Hls.isSupported()) {
+          activeHlsInstance = new Hls();
+          activeHlsInstance.loadSource(parsed.url);
+          activeHlsInstance.attachMedia(video);
+          activeHlsInstance.on(Hls.Events.MANIFEST_PARSED, function() {
+            video.play().catch(function() {});
+          });
+        } else {
+          video.src = parsed.url;
+          video.play().catch(function() {});
+        }
+        dlBtn.textContent = "↗ Open Stream";
+        dlBtn.onclick = function() { window.open(ep.url, "_blank"); };
+      } else {
+        embedFrame.classList.add("hidden");
+        video.classList.remove("hidden");
+        video.src = parsed.url;
+        video.load();
+        video.play().catch(function() {});
+        dlBtn.textContent = "⬇ Download Ep";
+        dlBtn.onclick = function() {
+          triggerEpisodeDownload(anime.id, playerState.seasonIndex, playerState.episodeIndex);
+        };
+      }
+    }
+
+    function seekPlayer(seconds) {
+      var video = document.getElementById("anime-video-player");
+      if (video && !video.classList.contains("hidden") && !isNaN(video.duration)) {
+        video.currentTime = Math.max(0, Math.min(video.duration, video.currentTime + seconds));
+      } else {
+        showToast("Use embedded player timeline to seek.");
+      }
+    }
+
+    function changePlaybackSpeed(rate) {
+      var video = document.getElementById("anime-video-player");
+      if (video && !video.classList.contains("hidden")) {
+        video.playbackRate = parseFloat(rate) || 1.0;
+      } else {
+        showToast("Use player settings for speed.");
+      }
+    }
+
+    function playPreviousEpisode() {
+      if (playerState.episodeIndex > 0) {
+        openAnimePlayer(playerState.animeId, playerState.seasonIndex, playerState.episodeIndex - 1);
+      } else {
+        showToast("Already at Episode 1");
+      }
+    }
+
+    function playNextEpisode() {
+      cancelAutoNext();
+      var anime = animeCatalog.find(function(a) { return a.id === playerState.animeId; });
+      if (!anime) return;
+      var seasons = anime.seasons || [];
+      var curSeason = seasons[playerState.seasonIndex];
+      if (curSeason && playerState.episodeIndex + 1 < (curSeason.episodes || []).length) {
+        openAnimePlayer(anime.id, playerState.seasonIndex, playerState.episodeIndex + 1);
+      } else if (playerState.seasonIndex + 1 < seasons.length) {
+        openAnimePlayer(anime.id, playerState.seasonIndex + 1, 0);
+      } else {
+        showToast("Reached latest episode!");
+      }
+    }
+
+    function cancelAutoNext() {
+      clearInterval(autoNextTimer);
+      var overlay = document.getElementById("autonext-overlay");
+      if (overlay) overlay.classList.add("hidden");
+    }
+
+    function getActiveUserKey() {
+      return localStorage.getItem(STORAGE_KEYS.CURRENT_USER) || "guest";
+    }
+
+    function getUserMyList() {
+      var users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || "{}");
+      var key = getActiveUserKey();
+      return (users[key] && users[key].myList) || [];
+    }
+
+    function toggleWatchlist(animeId) {
+      var users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || "{}");
+      var key = getActiveUserKey();
+      if (!users[key]) users[key] = { myList: [], history: [] };
+      var list = users[key].myList || [];
+      var idx = list.indexOf(animeId);
+      if (idx >= 0) { list.splice(idx, 1); showToast("Removed from My List"); }
+      else { list.unshift(animeId); showToast("Added to My List!"); }
+      users[key].myList = list;
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+      if (currentView === "mylist") renderMyListView();
+      if (currentView === "home") renderHomeView();
+    }
+
+    function recordWatchHistory(animeId, seasonIndex, episodeIndex) {
+      if (!animeId) return;
+      var users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || "{}");
+      var key = getActiveUserKey();
+      if (!users[key]) users[key] = { myList: [], history: [] };
+      var history = (users[key].history || []).filter(function(h) { return h.animeId !== animeId; });
+      history.unshift({ animeId: animeId, seasonIndex: seasonIndex, episodeIndex: episodeIndex, updatedAt: Date.now() });
+      users[key].history = history.slice(0, 12);
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    }
+
+    function renderContinueWatching() {
+      var section = document.getElementById("continue-watching-section");
+      var grid = document.getElementById("continue-watching-grid");
+      if (!section || !grid) return;
+      var users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || "{}");
+      var history = (users[getActiveUserKey()] && users[getActiveUserKey()].history) || [];
+      var valid = history.filter(function(h) { return animeCatalog.some(function(a) { return a.id === h.animeId; }); });
+      if (valid.length === 0) { section.classList.add("hidden"); return; }
+      section.classList.remove("hidden");
+      grid.innerHTML = valid.map(function(item) {
+        var anime = animeCatalog.find(function(a) { return a.id === item.animeId; });
+        return '<div class="bg-[#13151d] border border-[#252938] rounded-2xl p-3 flex items-center gap-3">' +
+          '<img src="' + (anime.poster || FALLBACK_POSTER) + '" class="w-14 h-20 rounded-xl object-cover shrink-0" />' +
+          '<div class="min-w-0 flex-1 space-y-1.5">' +
+          '<p class="text-xs sm:text-sm font-bold text-white truncate">' + escapeHtml(anime.title) + '</p>' +
+          '<p class="text-[11px] text-cyan-400 font-semibold">S' + (item.seasonIndex + 1) + ' • Ep ' + (item.episodeIndex + 1) + '</p>' +
+          '<button type="button" onclick="openAnimePlayer(\'' + anime.id + '\', ' + item.seasonIndex + ', ' + item.episodeIndex + ')" class="text-[11px] font-bold text-violet-300">▶ Resume Watching</button></div></div>';
+      }).join("");
+    }
+
+    function clearContinueWatching() {
+      var users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || "{}");
+      var key = getActiveUserKey();
+      if (users[key]) { users[key].history = []; localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users)); }
+      renderContinueWatching();
+    }
+
+    function renderMyListView() {
+      var grid = document.getElementById("mylist-grid");
+      var ids = getUserMyList();
+      var items = ids.map(function(id) { return animeCatalog.find(function(a) { return a.id === id; }); }).filter(Boolean);
+      if (items.length === 0) {
+        grid.innerHTML = '<div class="col-span-full bg-[#13151d] border border-[#252938] rounded-2xl p-8 text-center text-xs text-slate-400">Your My List is empty.</div>';
+        return;
+      }
+      grid.innerHTML = items.map(buildAnimeCardHtml).join("");
+    }
+
+    function triggerEpisodeDownload(animeId, seasonIndex, episodeIndex) {
+      var anime = animeCatalog.find(function(a) { return a.id === animeId; });
+      if (!anime) return;
+      var season = (anime.seasons || [])[seasonIndex];
+      var ep = season && (season.episodes || [])[episodeIndex];
+      if (!ep) return;
+
+      var parsed = parseUniversalVideoSource(ep.url);
+      if (parsed.mode !== "native") {
+        window.open(ep.url, "_blank");
+        return;
+      }
+
+      var downloads = JSON.parse(localStorage.getItem(STORAGE_KEYS.DOWNLOADS) || "[]");
+      downloads.unshift({
+        animeTitle: anime.title,
+        seasonName: season.name || ("Season " + (seasonIndex + 1)),
+        epLabel: "Ep " + (ep.number || (episodeIndex + 1)),
+        url: ep.url,
+        date: new Date().toLocaleDateString()
+      });
+      localStorage.setItem(STORAGE_KEYS.DOWNLOADS, JSON.stringify(downloads.slice(0, 50)));
+      updateDownloadsBadge();
+      var a = document.createElement("a");
+      a.href = ep.url;
+      a.download = anime.title + "_Ep" + (ep.number || (episodeIndex + 1)) + ".mp4";
+      a.target = "_blank";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      showToast("Downloading " + anime.title + "...");
+    }
+
+    function downloadEntireSeason(animeId, seasonIndex) {
+      var anime = animeCatalog.find(function(a) { return a.id === animeId; });
+      var season = anime && (anime.seasons || [])[seasonIndex];
+      var eps = (season && season.episodes) || [];
+      if (eps.length === 0) return showToast("No episodes to download.");
+      var downloads = JSON.parse(localStorage.getItem(STORAGE_KEYS.DOWNLOADS) || "[]");
+      eps.forEach(function(ep, idx) {
+        downloads.unshift({
+          animeTitle: anime.title,
+          seasonName: season.name || ("Season " + (seasonIndex + 1)),
+          epLabel: "Ep " + (ep.number || (idx + 1)),
+          url: ep.url,
+          date: new Date().toLocaleDateString()
+        });
+      });
+      localStorage.setItem(STORAGE_KEYS.DOWNLOADS, JSON.stringify(downloads.slice(0, 50)));
+      updateDownloadsBadge();
+      switchMainView("downloads");
+    }
+
+    function renderDownloadsView() {
+      var list = document.getElementById("downloads-list");
+      var downloads = JSON.parse(localStorage.getItem(STORAGE_KEYS.DOWNLOADS) || "[]");
+      if (downloads.length === 0) {
+        list.innerHTML = '<div class="bg-[#13151d] border border-[#252938] rounded-2xl p-8 text-center text-xs text-slate-400">No downloaded episodes yet.</div>';
+        return;
+      }
+      list.innerHTML = downloads.map(function(d) {
+        return '<div class="bg-[#13151d] border border-[#252938] rounded-xl p-3.5 flex items-center justify-between gap-3">' +
+          '<div class="min-w-0"><p class="text-sm font-bold text-white truncate">' + escapeHtml(d.animeTitle) + ' — ' + escapeHtml(d.epLabel) + '</p>' +
+          '<p class="text-xs text-slate-400">' + escapeHtml(d.seasonName) + ' • ' + d.date + '</p></div>' +
+          '<a href="' + d.url + '" target="_blank" download class="px-3 py-1.5 rounded-lg bg-cyan-600 text-xs font-bold text-white shrink-0">Open / Save</a></div>';
+      }).join("");
+    }
+
+    function clearAllDownloads() {
+      localStorage.setItem(STORAGE_KEYS.DOWNLOADS, "[]");
+      updateDownloadsBadge();
+      renderDownloadsView();
+    }
+
+    function updateDownloadsBadge() {
+      var downloads = JSON.parse(localStorage.getItem(STORAGE_KEYS.DOWNLOADS) || "[]");
+      var badge = document.getElementById("downloads-badge");
+      if (!badge) return;
+      badge.textContent = downloads.length;
+      badge.classList.toggle("hidden", downloads.length === 0);
+    }
+
+    function switchAuthTab(tab) {
+      var isSignup = tab === "signup";
+      document.getElementById("signup-form").classList.toggle("hidden", !isSignup);
+      document.getElementById("login-form").classList.toggle("hidden", isSignup);
+      document.getElementById("auth-tab-signup").className = isSignup ? "py-2 rounded-lg text-xs font-bold bg-violet-600 text-white" : "py-2 rounded-lg text-xs font-semibold text-slate-400";
+      document.getElementById("auth-tab-login").className = !isSignup ? "py-2 rounded-lg text-xs font-bold bg-cyan-600 text-white" : "py-2 rounded-lg text-xs font-semibold text-slate-400";
+    }
+
+    function handleEmailSignUp(e) {
+      e.preventDefault();
+      var name = document.getElementById("signup-name").value.trim();
+      var email = document.getElementById("signup-email").value.trim().toLowerCase();
+      var password = document.getElementById("signup-password").value;
+      var users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || "{}");
+      users[email] = { name: name, email: email, password: password, myList: [], history: [] };
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, email);
+      showToast("Account created!");
+      renderAccountView();
+    }
+
+    function handleEmailLogin(e) {
+      e.preventDefault();
+      var email = document.getElementById("login-email").value.trim().toLowerCase();
+      var password = document.getElementById("login-password").value;
+      var users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || "{}");
+      if (!users[email] || users[email].password !== password) return showToast("Invalid email or password!");
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, email);
+      showToast("Logged in!");
+      renderAccountView();
+    }
+
+    function logoutUserAccount() {
+      localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+      renderAccountView();
+    }
+
+    function renderAccountView() {
+      var curEmail = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+      var users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || "{}");
+      var user = curEmail && users[curEmail];
+      var navLabel = document.getElementById("bottom-nav-account-label");
+      if (!user) {
+        document.getElementById("account-guest-card").classList.remove("hidden");
+        document.getElementById("account-profile-card").classList.add("hidden");
+        if (navLabel) navLabel.textContent = "Account";
+        return;
+      }
+      document.getElementById("account-guest-card").classList.add("hidden");
+      document.getElementById("account-profile-card").classList.remove("hidden");
+      document.getElementById("profile-avatar").textContent = (user.name || "U")[0].toUpperCase();
+      document.getElementById("profile-name").textContent = user.name;
+      document.getElementById("profile-email").textContent = user.email;
+      document.getElementById("profile-mylist-count").textContent = (user.myList || []).length;
+      document.getElementById("profile-history-count").textContent = (user.history || []).length;
+      if (navLabel) navLabel.textContent = user.name.split(" ")[0];
+    }
+
+    function getSavedAdminPin() {
+      return localStorage.getItem(STORAGE_KEYS.ADMIN_PIN) || "1234";
+    }
+
+    function updateAdminViewState() {
+      var lockScreen = document.getElementById("admin-lock-screen");
+      var studio = document.getElementById("admin-studio-content");
+      if (!lockScreen || !studio) return;
+      lockScreen.classList.toggle("hidden", isAdminUnlocked);
+      studio.classList.toggle("hidden", !isAdminUnlocked);
+      if (isAdminUnlocked) {
+        populateAdminDropdowns();
+        renderAdminCatalogList();
+      }
+    }
+
+    function toggleAdminPinVisibility() {
+      var inp = document.getElementById("admin-pin-input");
+      if (inp) inp.type = inp.type === "password" ? "text" : "password";
+    }
+
+    function handleInlineAdminUnlock(e) {
+      e.preventDefault();
+      var input = document.getElementById("admin-pin-input");
+      var err = document.getElementById("admin-pin-error");
+      if (input.value === getSavedAdminPin()) {
+        isAdminUnlocked = true;
+        input.value = "";
+        err.classList.add("hidden");
+        updateAdminViewState();
+        showToast("Admin Studio Unlocked!");
+      } else {
+        err.classList.remove("hidden");
+      }
+    }
+
+    function lockAdminPanel() {
+      isAdminUnlocked = false;
+      updateAdminViewState();
+    }
+
+    function handleChangeAdminPassword(e) {
+      e.preventDefault();
+      var oldPin = document.getElementById("old-admin-pin").value;
+      var newPin = document.getElementById("new-admin-pin").value.trim();
+      if (oldPin !== getSavedAdminPin()) return showToast("Current PIN incorrect!");
+      localStorage.setItem(STORAGE_KEYS.ADMIN_PIN, newPin);
+      e.target.reset();
+      showToast("Admin Password Updated!");
+    }
+
+    function populateAdminDropdowns() {
+      var uploadAnimeSel = document.getElementById("upload-anime-select");
+      var seasonAnimeSel = document.getElementById("season-anime-select");
+      if (!uploadAnimeSel || !seasonAnimeSel) return;
+      if (animeCatalog.length === 0) {
+        uploadAnimeSel.innerHTML = '<option value="">-- Create an Anime First --</option>';
+        seasonAnimeSel.innerHTML = '<option value="">-- Create an Anime First --</option>';
+        document.getElementById("upload-season-select").innerHTML = '<option value="">--</option>';
+        return;
+      }
+      var opts = animeCatalog.map(function(a) { return '<option value="' + a.id + '">' + escapeHtml(a.title) + '</option>'; }).join("");
+      uploadAnimeSel.innerHTML = opts;
+      seasonAnimeSel.innerHTML = opts;
+      onUploadAnimeChange();
+    }
+
+    function onUploadAnimeChange() {
+      var animeId = document.getElementById("upload-anime-select").value;
+      var seasonSel = document.getElementById("upload-season-select");
+      var anime = animeCatalog.find(function(a) { return a.id === animeId; });
+      if (!anime || !seasonSel) return;
+      var seasons = anime.seasons || [];
+      seasonSel.innerHTML = seasons.map(function(s, idx) {
+        return '<option value="' + idx + '">' + escapeHtml(s.name || ("Season " + (idx + 1))) + '</option>';
+      }).join("");
+      updateNextEpisodeBadge();
+    }
+
+    function updateNextEpisodeBadge() {
+      var animeId = document.getElementById("upload-anime-select").value;
+      var sIdx = parseInt(document.getElementById("upload-season-select").value, 10) || 0;
+      var anime = animeCatalog.find(function(a) { return a.id === animeId; });
+      var season = anime && (anime.seasons || [])[sIdx];
+      var nextNum = ((season && season.episodes) ? season.episodes.length : 0) + 1;
+      document.getElementById("next-ep-badge").textContent = "Next: Ep " + nextNum;
+      document.getElementById("upload-ep-number").value = nextNum;
+    }
+
+    async function handleCreateSeries(e) {
+      e.preventDefault();
+      var title = document.getElementById("new-series-title").value.trim();
+      if (!title) return;
+      var newSeries = {
+        id: "anime_" + Date.now(),
+        title: title,
+        audio: document.getElementById("new-series-audio").value,
+        rating: document.getElementById("new-series-rating").value || "9.0",
+        genres: document.getElementById("new-series-genres").value.trim() || "Anime",
+        poster: document.getElementById("new-series-poster").value.trim() || FALLBACK_POSTER,
+        description: document.getElementById("new-series-desc").value.trim() || "Watch on AnimeBox.",
+        seasons: [{ name: "Season 1", episodes: [] }]
+      };
+      animeCatalog.unshift(newSeries);
+      await pushCatalogToFirebase();
+      e.target.reset();
+      populateAdminDropdowns();
+      renderAdminCatalogList();
+      renderHomeView();
+      showToast('"' + title + '" published!');
+    }
+
+    async function handleAddSeason(e) {
+      e.preventDefault();
+      var animeId = document.getElementById("season-anime-select").value;
+      var anime = animeCatalog.find(function(a) { return a.id === animeId; });
+      if (!anime) return showToast("Create an anime first!");
+      if (!anime.seasons) anime.seasons = [];
+      var name = document.getElementById("new-season-name").value.trim() || ("Season " + (anime.seasons.length + 1));
+      anime.seasons.push({ name: name, episodes: [] });
+      await pushCatalogToFirebase();
+      document.getElementById("new-season-name").value = "";
+      populateAdminDropdowns();
+      renderAdminCatalogList();
+      showToast("Added " + name);
+    }
+
+    async function handleUploadEpisodes(e) {
+      e.preventDefault();
+      var animeId = document.getElementById("upload-anime-select").value;
+      var sIdx = parseInt(document.getElementById("upload-season-select").value, 10) || 0;
+      var anime = animeCatalog.find(function(a) { return a.id === animeId; });
+      if (!anime) return showToast("Select an anime first!");
+      var season = anime.seasons[sIdx];
+      if (!season.episodes) season.episodes = [];
+
+      var startNum = parseInt(document.getElementById("upload-ep-number").value, 10) || (season.episodes.length + 1);
+      var customTitle = document.getElementById("upload-ep-title").value.trim();
+      var directUrl = document.getElementById("upload-ep-url").value.trim();
+      var fileInput = document.getElementById("upload-ep-files");
+      var files = Array.from(fileInput.files || []);
+
+      if (!directUrl && files.length === 0) return showToast("Paste a video link or select file!");
+
+      if (files.length > 0) {
+        files.forEach(function(file, i) {
+          season.episodes.push({
+            number: startNum + i,
+            title: customTitle && files.length === 1 ? customTitle : file.name.replace(/\.[^/.]+$/, ""),
+            url: URL.createObjectURL(file)
+          });
+        });
+        showToast("Uploaded " + files.length + " local episode(s)!");
+      } else {
+        season.episodes.push({
+          number: startNum,
+          title: customTitle || ("Episode " + startNum),
+          url: directUrl
+        });
+        await pushCatalogToFirebase();
+        showToast("Episode " + startNum + " synced to Firebase!");
+      }
+
+      document.getElementById("upload-ep-title").value = "";
+      document.getElementById("upload-ep-url").value = "";
+      fileInput.value = "";
+      updateNextEpisodeBadge();
+      renderAdminCatalogList();
+      renderHomeView();
+    }
+
+    function renderAdminCatalogList() {
+      var box = document.getElementById("admin-catalog-list");
+      if (!box) return;
+      if (animeCatalog.length === 0) {
+        box.innerHTML = '<p class="text-xs text-slate-400">No anime uploaded yet.</p>';
+        return;
+      }
+      box.innerHTML = animeCatalog.map(function(anime) {
+        var seasons = anime.seasons || [];
+        return '<div class="bg-[#181b25] border border-[#252938] rounded-xl p-3.5 space-y-2">' +
+          '<div class="flex items-center justify-between gap-2">' +
+          '<div><h4 class="text-sm font-extrabold text-white">' + escapeHtml(anime.title) + '</h4>' +
+          '<p class="text-[11px] text-slate-400">' + seasons.length + ' Season(s)</p></div>' +
+          '<button type="button" onclick="deleteAnimeSeries(\'' + anime.id + '\')" class="px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-300 text-xs font-bold">Delete</button></div></div>';
+      }).join("");
+    }
+
+    async function deleteAnimeSeries(animeId) {
+      animeCatalog = animeCatalog.filter(function(a) { return a.id !== animeId; });
+      await pushCatalogToFirebase();
+      populateAdminDropdowns();
+      renderAdminCatalogList();
+      renderHomeView();
+      showToast("Anime deleted.");
+    }
+
+    async function clearEntireCatalog() {
+      animeCatalog = [];
+      await pushCatalogToFirebase();
+      populateAdminDropdowns();
+      renderAdminCatalogList();
+      renderHomeView();
+      showToast("All catalog data cleared.");
+    }
+
+    function exportCatalogBackup() {
+      var blob = new Blob([JSON.stringify(animeCatalog, null, 2)], { type: "application/json" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "animebox-backup-" + Date.now() + ".json";
+      a.click();
+    }
+
+    function importCatalogBackup(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = async function(ev) {
+        try {
+          var parsed = JSON.parse(ev.target.result);
+          if (!Array.isArray(parsed)) throw new Error("Invalid");
+          animeCatalog = parsed;
+          await pushCatalogToFirebase();
+          populateAdminDropdowns();
+          renderAdminCatalogList();
+          renderHomeView();
+          showToast("Backup restored!");
+        } catch (err) {
+          showToast("Invalid JSON file.");
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function toggleLiteMode() {
+      var isLite = document.body.classList.toggle("lite-mode");
+      localStorage.setItem(STORAGE_KEYS.LITE_MODE, isLite ? "1" : "0");
+      var dot = document.getElementById("lite-dot");
+      if (dot) dot.className = isLite ? "w-2 h-2 rounded-full bg-emerald-400" : "w-2 h-2 rounded-full bg-slate-500";
+      showToast(isLite ? "Lite Mode ON" : "Lite Mode OFF");
+    }
+
+    function escapeHtml(str) {
+      return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function renderAllViews() {
+      renderHomeView();
+      renderAccountView();
+      updateDownloadsBadge();
+      if (currentView === "admin") updateAdminViewState();
+      if (currentView === "mylist") renderMyListView();
+      if (currentView === "downloads") renderDownloadsView();
+    }
+
+    (function initAnimeBox() {
+      try {
+        animeCatalog = JSON.parse(localStorage.getItem(STORAGE_KEYS.CATALOG) || "[]");
+      } catch (e) {
+        animeCatalog = [];
+      }
+      if (localStorage.getItem(STORAGE_KEYS.LITE_MODE) === "1") {
+        document.body.classList.add("lite-mode");
+        var dot = document.getElementById("lite-dot");
+        if (dot) dot.className = "w-2 h-2 rounded-full bg-emerald-400";
+      }
+      renderAllViews();
+      syncFromFirebase(false);
+    })();
+  </script>
+</body>
+</html>
